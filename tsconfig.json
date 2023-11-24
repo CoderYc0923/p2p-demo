@@ -27,9 +27,15 @@
       "views/*": ["src/views/*"],
       "router/*": ["src/router/*"],
       "assets/*": ["src/assets/*"],
-      "components/*": ["src/components/*"],
+      "components/*": ["src/components/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue"],
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "src/**/*.d.ts",
+    "src/**/*.vue",
+    "./auto-imports.d.ts"
+  ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
