@@ -28,23 +28,83 @@
 
 <script setup lang="ts">
 import { SIGNAL_SERVER_URL } from "@/configs";
-/* const router = useRouter();
-const showCard = ref<boolean>(false);
+import { Socket, SocketConfig, HandleFunctions } from "@/utils/socket";
 
-watch(
-  () => router.currentRoute,
-  (newValue) => {
-    showCard.value = true;
-  },
-  {
-    immediate: true,
-  }
-); */
+const socket = ref<any>();
 const localVideoRef = ref();
 const remoteVideoRef = ref();
 
+const username = ref<string>("");
+const onlinePeersList = ref<any[]>([]);
+const onlineClients = ref<any[]>([]);
+
+const onOtherJoin = (data: any) => {
+  console.log(`${data.username}加入了房间`);
+};
+
+const onMyJoin = () => {
+  console.log("您加入了房间");
+};
+
+const onMyLeave = () => {
+  console.log("您离开了房间");
+  socket.value?.disconnect();
+};
+
+const onOtherLeave = (data: any) => {
+  console.log(`${data.username}离开了房间`);
+  if (onlinePeersList[data.userId]) {
+    onlinePeersList[data.userId].close();
+    delete onlinePeersList[data.userId];
+  }
+};
+
+const onClientsOnline = (data: any) => {
+  console.log(`在线人员信息：${data}`);
+  onlineClients.value = data;
+};
+
+const onPcMessage = (data: any) => {
+  console.log("接收到的pc信息：", data);
+  signalingMessageCallback(data);
+};
+
+const onInteract = (data: any) => {};
+
+const onAgreeInteract = (data: any) => {};
+
+const onRefuseInteract = (data: any) => {};
+
+const onStopInteract = (data: any) => {};
+
+const onCloseDisconnect = (data: any) => {};
+
+const signalingMessageCallback = (data: any) => {};
+
 //加入房间
-const joinRoom = () => {};
+const joinRoom = () => {
+  const config: SocketConfig = {
+    path: "/rtcket",
+    query: {
+      username: username.value,
+      roomId: "hello",
+    },
+  };
+  const handleFunctions: HandleFunctions = {
+    onOtherJoin,
+    onMyJoin,
+    onMyLeave,
+    onOtherLeave,
+    onClientsOnline,
+    onPcMessage,
+    onInteract,
+    onAgreeInteract,
+    onRefuseInteract,
+    onStopInteract,
+    onCloseDisconnect,
+  };
+  socket.value = new Socket(SIGNAL_SERVER_URL, config, handleFunctions);
+};
 
 onMounted(joinRoom);
 </script>
