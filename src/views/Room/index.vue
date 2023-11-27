@@ -34,8 +34,8 @@ const socket = ref<any>();
 const localVideoRef = ref();
 const remoteVideoRef = ref();
 
-const username = ref<string>("");
-const onlinePeersList = ref<any[]>([]);
+const username = ref<string>("yc");
+const onlinePeersList = ref<any>([]);
 const onlineClients = ref<any[]>([]);
 
 const onOtherJoin = (data: any) => {

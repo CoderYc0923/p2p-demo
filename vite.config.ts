@@ -35,5 +35,23 @@ export default defineConfig(({ command, mode }) => {
         },
       },
     },
+    server: {
+      host: "0.0.0.0",
+      proxy: {
+        "/rtcket": {
+          target: "http://localhost:3007/",
+          changeOrigin: true,
+        },
+        "/socket.io": {
+          target: "http://localhost:3007/",
+          changeOrigin: true,
+        },
+        "/sockjs-node": {
+          target: "http://localhost:3007",
+          ws: false,
+          changeOrigin: true,
+        },
+      },
+    },
   };
 });
