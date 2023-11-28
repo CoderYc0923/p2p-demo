@@ -41,6 +41,7 @@ export class Socket {
   private onRefuseInteract: Function = defualtFunction; //对方拒绝通话回调
   private onStopInteract: Function = defualtFunction; //对方结束通话回调
   private onCloseDisconnect: Function = defualtFunction; //对方断开disconnect回调
+  id: any;
 
   constructor(
     url: string,
@@ -54,7 +55,11 @@ export class Socket {
 
   private connect(handleFunctions: HandleFunctions) {
     this.socket = io.connect(this.url, this.socketConfig);
-    this.setHandleFunctions(handleFunctions);
+    this.socket.on("connect", () => {
+      this.id = this.socket.id;
+      this.setHandleFunctions(handleFunctions);
+      this.bindHnadleFunctions();
+    });
   }
 
   private setHandleFunctions(handleFunctions: HandleFunctions) {
@@ -70,5 +75,31 @@ export class Socket {
     this.onStopInteract = handleFunctions.onStopInteract || defualtFunction;
     this.onCloseDisconnect =
       handleFunctions.onCloseDisconnect || defualtFunction;
+  }
+
+  private bindHnadleFunctions() {
+    this.socket.on("join", this.onOtherJoin);
+    this.socket.on("joined", this.onMyJoin);
+    this.socket.on("left", this.onMyLeave);
+    this.socket.on("leave", this.onOtherLeave);
+    this.socket.on("clients", this.onClientsOnline);
+    this.socket.on("pc_messageoin", this.onPcMessage);
+    this.socket.on("interact", this.onInteract);
+    this.socket.on("agree_interact", this.onAgreeInteract);
+    this.socket.on("refuse_interact", this.onRefuseInteract);
+    this.socket.on("stop_interact", this.onStopInteract);
+    this.socket.on("close_disconnect", this.onCloseDisconnect);
+  }
+
+  emit(order: string, callback: Function) {
+    this.socket.emit(order, callback);
+  }
+
+  getId() {
+    return this.socket.id;
+  }
+
+  disconnect() {
+    this.socket.disconnect();
   }
 }

@@ -1,17 +1,24 @@
 /* 清除样式 */
 @import './reset.scss';
+/* 混合样式 */
 @import './mixins.scss';
+/* 几何位置信息样式 */
+@import './geometry.scss';
+/* 特效样式 */
+@import './vfx.scss';
 
 #app {
     width : 100%;
     height: 100vh;
 }
 
-.flex-row {
-    @include flexRow();
-}
-
 .auto-size {
     width : 100%;
     height: 100%;
 }
+
+.cursor-pointer {
+    cursor: pointer;
+}
+
+

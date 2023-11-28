@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@types/socket.io-client": "^3.0.0",
+    "freeze-virtual-ui": "^1.1.0",
     "pinia": "^2.1.7",
     "pinia-plugin-persistedstate": "^3.2.0",
     "sass": "^1.69.5",
