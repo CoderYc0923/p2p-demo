@@ -89,7 +89,10 @@ const addInfo = (info: string) => {
 
 const interact = (user: any) => {
   if (!!peerList[user.userId]) {
-    MessageBoxFn(`${user.username}当前正忙`, "提示", (action: string) => {});
+    MessageBoxFn(`${user.username}当前正忙`, "提示", {
+      boxType: "confirm",
+      type: "warning",
+    });
     return;
   }
   if (!localStream.value) {
@@ -158,8 +161,6 @@ const onInteract = (data: any) => {
 };
 
 const onAgreeInteract = (data: any) => {
-  console.log('11111111111', data);
-  
   MessageBoxFn(`${data.to.username}接受了你的视频请求`, "收到一条消息", {
     boxType: "alert",
     type: "success",
@@ -191,7 +192,45 @@ const clearRoom = () => {
   onlineClients.value = [];
 };
 
-const signalingMessageCallback = (data: any) => {};
+//A和B建立连接，A和C建立连接，收到的B和C的消息需要进行区分
+const signalingMessageCallback = (data: any) => {
+  console.log("signalingMessageCallback", data, peerList.value);
+
+  let otherId = data.from.userId;
+  let pc = peerList.value[otherId];
+  let message = data.pcMsg;
+  if (message.type === "offer") {
+    console.log("signalingMessageCallback offer", message);
+    pc.setRemoteDescription(new RTCSessionDescription(message))
+      .then(() => {
+        pc.createAnswer()
+          .then((description: any) => createdAnswerSuccess(pc, description))
+          .catch((err: any) => console.warn("createAnswer" + err));
+      })
+      .catch((err: any) => console.warn("创建远程描述失败" + err));
+  } else if (message.type === "answer") {
+    console.log("收到了回应answer", message);
+    pc.setRemoteDescription(new RTCSessionDescription(message));
+  } else if (message.type === "candidate") {
+    let candidate = new RTCIceCandidate({
+      sdpMLineIndex: message.label,
+      candidate: message.candidate,
+    });
+    pc.addIceCandidate(candidate).catch((err: any) =>
+      console.warn("addIceCandidate", err)
+    );
+  }
+};
+
+//创建answer生成本地会话描述
+const createdAnswerSuccess = (pc: any, description: any) => {
+  pc.setLocalDescription(description)
+    .then(() => {
+      sendPcMessage(pc.localDescription);
+      console.log("创建answer,生成本地会话描述");
+    })
+    .catch((err: any) => console.warn("createdAnswerSuccess", err));
+};
 
 //获取本地视频流
 const startAction = (callback: Function) => {
@@ -217,13 +256,13 @@ const getLocalMediaStream = (stream: any, callback: Function) => {
 //创建对等连接
 const createPeerConnection = (isCreateOffer: boolean, data: any) => {
   let otherUser = isCreateOffer ? data.to : data.from;
-  if (!peerList[otherUser.userId]) {
-    let pc = new RTCPeerConnection(PC_CONFIG);
+  if (!peerList.value[otherUser.userId]) {
+    let pc: any = new RTCPeerConnection(PC_CONFIG);
     pc.from = data.from;
     pc.to = data.to;
     pc.isSelf = isCreateOffer; //发起者是否是自己
     pc.other = otherUser;
-    peerList[otherUser.userId] = pc;
+    peerList.value[otherUser.userId] = pc;
     onlinePeersList.value.push(pc);
     createConnection(isCreateOffer, pc);
   }
@@ -257,7 +296,7 @@ const createConnection = (isCreateOffer: boolean, pc: any) => {
   if (isCreateOffer) {
     pc.createOffer(OFFER_OPTIONS)
       .then((description: any) => createOfferSuccess(pc, description))
-      .catch((err: any) => console.log("创建offer失败", err));
+      .catch((err: any) => console.warn("创建offer失败", err));
   }
 };
 
@@ -275,7 +314,7 @@ const createOfferSuccess = (pc: any, description: any) => {
       console.log("成功创建offer，生成本地会话描述");
     })
     .catch((err: any) => {
-      console.log("生成本地会话描述失败:", err);
+      console.warn("生成本地会话描述失败:", err);
     });
 };
 
@@ -306,35 +345,41 @@ const closeConnection = async () => {
   onlineClients.value = [];
   await closeLocalMedia();
   localStream.value = null;
-  remoteStream.value = null
-}
+  remoteStream.value = null;
+};
 
 const closeLocalMedia = () => {
   if (localStream.value && localStream.value.getTracks()) {
-    localStream.value.getTracks().forEach((track:any) => {
+    localStream.value.getTracks().forEach((track: any) => {
       track.stop();
-    })
+    });
   }
   if (remoteStream.value && remoteStream.value.getTracks()) {
-    remoteStream.value.getTracks().forEach((track:any) => {
+    remoteStream.value.getTracks().forEach((track: any) => {
       track.stop();
-    })
+    });
   }
-  if (localVideoRef.value.srcObject && localVideoRef.value.srcObject.getTracks()) {
-    localVideoRef.value.srcObject.getTracks().forEach((track:any) => {
+  if (
+    localVideoRef.value.srcObject &&
+    localVideoRef.value.srcObject.getTracks()
+  ) {
+    localVideoRef.value.srcObject.getTracks().forEach((track: any) => {
       track.stop();
-    })
+    });
   }
-  if (remoteVideoRef.value.srcObject && remoteVideoRef.value.srcObject.getTracks()) {
-    remoteVideoRef.value.srcObject.getTracks().forEach((track:any) => {
+  if (
+    remoteVideoRef.value.srcObject &&
+    remoteVideoRef.value.srcObject.getTracks()
+  ) {
+    remoteVideoRef.value.srcObject.getTracks().forEach((track: any) => {
       track.stop();
-    })
+    });
   }
   if (onlinePeersList.value.other) {
-    remoteVideoRef.value.srcObject = null
+    remoteVideoRef.value.srcObject = null;
   }
   localVideoRef.value.srcObject = null;
-}
+};
 
 //加入房间
 const joinRoom = () => {

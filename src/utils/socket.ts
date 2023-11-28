@@ -83,7 +83,7 @@ export class Socket {
     this.socket.on("left", this.onMyLeave);
     this.socket.on("leave", this.onOtherLeave);
     this.socket.on("clients", this.onClientsOnline);
-    this.socket.on("pc_messageoin", this.onPcMessage);
+    this.socket.on("pc_message", this.onPcMessage);
     this.socket.on("interact", this.onInteract);
     this.socket.on("agree_interact", this.onAgreeInteract);
     this.socket.on("refuse_interact", this.onRefuseInteract);
