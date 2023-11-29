@@ -23,7 +23,7 @@
         ></video>
       </div>
     </div>
-    <div class="room-right frosted-glass pd-10">
+    <!-- <div class="room-right frosted-glass pd-10">
       <div class="base-info mr-5-b">
         当前在线人数:{{ onlineClients.length }}
       </div>
@@ -43,8 +43,8 @@
           >
         </li>
       </ul>
-    </div>
-    <div class="room-left">
+    </div> -->
+    <!-- <div class="room-left">
       <ul class="user-list pd-10">
         <li
           class="flex-row-sb mr-5-b"
@@ -54,360 +54,105 @@
           <span>{{ item }}</span>
         </li>
       </ul>
-    </div>
+    </div> -->
   </div>
 </template>
 
 <script setup lang="ts">
-import {
-  SIGNAL_SERVER_URL,
-  MEDIA_STREAM_CONSTRAINTS,
-  PC_CONFIG,
-  OFFER_OPTIONS,
-} from "@/configs";
-import { Socket, SocketConfig, HandleFunctions } from "@/utils/socket";
-import { MessageBoxFn } from "freeze-virtual-ui";
+import { PC_CONFIG, CALL_STATE, SOCKET_ON_RTC,CALL_TYPE } from "@/configs";
+import SocketControler from "@/utils/socket";
+import { useUserInfo } from "@/stores/userInfo";
 
-const socket = ref<any>();
 const localVideoRef = ref();
 const remoteVideoRef = ref();
-const localStream = ref();
-const remoteStream = ref();
 
-const username = computed(() => {
-  return `编号${Math.floor(Math.random() * 10 + 1)}`;
-});
-const onlinePeersList = ref<any>([]);
-const onlineClients = ref<any[]>([]);
-const peerList = ref<any>({});
-const infoList = ref<string[]>([]);
-const pcMsgTo = ref<any>({});
+let localPc: RTCPeerConnection; //对方pc连接
+let remotePc: RTCPeerConnection; //对方pc连接
+let ws: SocketControler; // socket控制器
+let callState = ref<CALL_STATE>(CALL_STATE.WAIT); // 通话状态
+const userInfo = useUserInfo();
+const router = useRouter();
 
-const addInfo = (info: string) => {
-  infoList.value.push(info);
+watch(
+  () => router.currentRoute.value,
+  (router: any) => {
+    const userName = router.query.userName;
+    init(userName);
+  },
+  {
+    immediate: true,
+  }
+);
+
+const init = (userName: string) => {
+  remotePc = new RTCPeerConnection(PC_CONFIG);
+  createRTC(userName);
 };
 
-const interact = (user: any) => {
-  if (!!peerList[user.userId]) {
-    MessageBoxFn(`${user.username}当前正忙`, "提示", {
-      boxType: "confirm",
-      type: "warning",
-    });
-    return;
-  }
-  if (!localStream.value) {
-    startAction(() => {
-      interactHandle(user);
-    });
-  } else {
-    interactHandle(user);
-  }
-};
-
-const interactHandle = (user: any) => {
-  socket.value.emit("interact", {
-    from: { username: username.value, userId: socket.value.id },
-    to: user,
+//创建rtc协议连接
+const createRTC = (userName: string) => {
+  ws = new SocketControler(userName);
+  //挂断回调
+  ws.userOff(() => {
+    resetState(CALL_STATE.OFF);
   });
-  addInfo(`${username.value}向${user.username}发起了视频通话请求`);
-};
-
-const onOtherJoin = (data: any) => {
-  addInfo(`${data.username}加入了房间`);
-};
-
-const onMyJoin = () => {
-  addInfo(`您加入了房间`);
-};
-
-const onMyLeave = () => {
-  addInfo(`您离开了房间`);
-  socket.value?.disconnect();
-};
-
-const onOtherLeave = (data: any) => {
-  addInfo(`${data.username}离开了房间`);
-  if (onlinePeersList[data.userId]) {
-    onlinePeersList[data.userId].close();
-    delete onlinePeersList[data.userId];
-  }
-};
-
-const onClientsOnline = (data: any) => {
-  console.log(`在线人员信息：`, data);
-  onlineClients.value = data;
-};
-
-const onPcMessage = (data: any) => {
-  console.log("接收到的pc信息：", data);
-  signalingMessageCallback(data);
-};
-
-const onInteract = (data: any) => {
-  MessageBoxFn(`${data.from.username}向你发来视频通话请求`, "收到一条消息", {
-    boxType: "confirm",
-    type: "info",
+  //拒绝回调
+  ws.userRefuse(() => {
+    resetState(CALL_STATE.REFUSE);
+  });
+  //offer回调
+  ws.rtcOffer(async res => {
+    //创建answer
+    const remoteDesc = res.data;
+    remotePc = new RTCPeerConnection(PC_CONFIG);
+    await remotePc.setRemoteDescription(remoteDesc)
+    let remoteAnswer = await remotePc.createAnswer();
+    await remotePc.setLocalDescription(remoteAnswer);
+    ws.emit(SOCKET_ON_RTC.ANSWER, remoteAnswer, res.callType)
   })
-    .then(() => {
-      //接听
-      socket.value.emit("agree_interact", data);
-      pcMsgTo.value = data.from;
-      createPeerConnection(false, data);
-    })
-    .catch(() => {
-      //拒接
-      socket.value.emit("refuse_interact", data);
-    });
-};
+  //answer回调
+  ws.rtcAnswer(async res => {
+    let remoteAnswer = res.data;
+    await localPc.setRemoteDescription(remoteAnswer)
+  })
+  //candidate回调
+  ws.rtcCandidate(async res => {
+    if (!remoteVideoRef.value) return;
+    userInfo.toUserInfo = res.toUserInfo;
+    let video:HTMLVideoElement = remoteVideoRef.value.$el;
+    remotePc.ontrack = e => {
+      video.srcObject = e.streams[0];
+      //如果是发起者则需要对方同意，如果是接收者则不需要
+      if (res.callType === CALL_TYPE.SENDER) {
 
-const onAgreeInteract = (data: any) => {
-  MessageBoxFn(`${data.to.username}接受了你的视频请求`, "收到一条消息", {
-    boxType: "alert",
-    type: "success",
-  });
-  pcMsgTo.value = data.to;
-  addInfo(`${data.to.username}接受了${data.from.username}的视频请求`);
-  createPeerConnection(true, data);
-};
-
-const onRefuseInteract = (data: any) => {
-  MessageBoxFn(`${data.to.username}拒绝了你的视频请求`, "收到一条消息", {
-    boxType: "alert",
-    type: "warning",
-  });
-  addInfo(`${data.to.username}拒绝了${data.from.username}的视频请求`);
-  closeConnection();
-};
-
-const onStopInteract = (data: any) => {};
-
-const onCloseDisconnect = (data: any) => {
-  console.log("onCloseDisconnect", data);
-
-  addInfo(`${data[0].username}断开了连接`);
-};
-
-const clearRoom = () => {
-  socket.value?.disconnect();
-  onlineClients.value = [];
-};
-
-//A和B建立连接，A和C建立连接，收到的B和C的消息需要进行区分
-const signalingMessageCallback = (data: any) => {
-  console.log("signalingMessageCallback", data, peerList.value);
-
-  let otherId = data.from.userId;
-  let pc = peerList.value[otherId];
-  let message = data.pcMsg;
-  if (message.type === "offer") {
-    console.log("signalingMessageCallback offer", message);
-    pc.setRemoteDescription(new RTCSessionDescription(message))
-      .then(() => {
-        pc.createAnswer()
-          .then((description: any) => createdAnswerSuccess(pc, description))
-          .catch((err: any) => console.warn("createAnswer" + err));
-      })
-      .catch((err: any) => console.warn("创建远程描述失败" + err));
-  } else if (message.type === "answer") {
-    console.log("收到了回应answer", message);
-    pc.setRemoteDescription(new RTCSessionDescription(message));
-  } else if (message.type === "candidate") {
-    let candidate = new RTCIceCandidate({
-      sdpMLineIndex: message.label,
-      candidate: message.candidate,
-    });
-    pc.addIceCandidate(candidate).catch((err: any) =>
-      console.warn("addIceCandidate", err)
-    );
-  }
-};
-
-//创建answer生成本地会话描述
-const createdAnswerSuccess = (pc: any, description: any) => {
-  pc.setLocalDescription(description)
-    .then(() => {
-      sendPcMessage(pc.localDescription);
-      console.log("创建answer,生成本地会话描述");
-    })
-    .catch((err: any) => console.warn("createdAnswerSuccess", err));
-};
-
-//获取本地视频流
-const startAction = (callback: Function) => {
-  navigator.mediaDevices
-    .getUserMedia(MEDIA_STREAM_CONSTRAINTS)
-    .then((stream) => {
-      getLocalMediaStream(stream, callback);
-      console.log("获取本地视频流");
-    })
-    .catch((err) => {
-      console.log("获取本地视频流失败：", err);
-    });
-};
-
-//将本地视频流存入video标签播放
-const getLocalMediaStream = (stream: any, callback: Function) => {
-  localVideoRef.value.srcObject = stream;
-  localStream.value = stream;
-  callback();
-  console.log("本地视频流存入video");
-};
-
-//创建对等连接
-const createPeerConnection = (isCreateOffer: boolean, data: any) => {
-  let otherUser = isCreateOffer ? data.to : data.from;
-  if (!peerList.value[otherUser.userId]) {
-    let pc: any = new RTCPeerConnection(PC_CONFIG);
-    pc.from = data.from;
-    pc.to = data.to;
-    pc.isSelf = isCreateOffer; //发起者是否是自己
-    pc.other = otherUser;
-    peerList.value[otherUser.userId] = pc;
-    onlinePeersList.value.push(pc);
-    createConnection(isCreateOffer, pc);
-  }
-};
-
-//webRTC默认开启trickle-ice,每次探测到一个icedidate都会icecandidate触发事件，直到返回null
-const createConnection = (isCreateOffer: boolean, pc: any) => {
-  pc.addEventListener("icecandidate", (event: any) => {
-    console.log("icecandidate event:", event);
-    if (event.candidate) {
-      let messageParams = {
-        type: "candidate",
-        label: event.candidate.sdpMLineIndex,
-        id: event.candidate.sdpMid,
-        candidate: event.candidate.candidate,
-      };
-      sendPcMessage(messageParams);
-    } else {
-      console.log("icecandidate探测结束");
+      } else {
+        video.oncanplay = () => {
+          video.play();
+          callState.value = CALL_STATE.CONNECT;
+        }
+      }
     }
-  });
-  if (localStream.value) {
-    pc.addStream(localStream.value);
-  } else {
-    startAction(addStreamToLocalPc(pc));
-  }
-  pc.addEventListener("addstream", (event: any) => {
-    console.log("触发addstream");
-    handleRemoteMediaStreamAdded(pc, event);
-  });
-  if (isCreateOffer) {
-    pc.createOffer(OFFER_OPTIONS)
-      .then((description: any) => createOfferSuccess(pc, description))
-      .catch((err: any) => console.warn("创建offer失败", err));
-  }
+    //添加ice
+    const candidate = res.data;
+    await remotePc.addIceCandidate(candidate)
+  })
 };
 
-const addStreamToLocalPc = (pc: any) => {
-  return () => {
-    pc.addStream(localStream.value);
-  };
+//重置状态
+const resetState = (state: CALL_STATE) => {
+  callState.value = state;
+  //关闭远程PC通道
+  remotePc.close();
+  //清除事件
+  if (remoteVideoRef.value) remoteVideoRef.value.$el.oncanplay = null;
+  setTimeout(() => {
+    userInfo.toUserInfo = {
+      userName: "",
+      userId: "",
+    };
+    callState.value = CALL_STATE.WAIT;
+  }, 1000);
 };
-
-const createOfferSuccess = (pc: any, description: any) => {
-  //用sdp生成localPc的本地描述,remotePc的远程描述
-  pc.setLocalDescription(description)
-    .then(() => {
-      sendPcMessage(pc.localDescription);
-      console.log("成功创建offer，生成本地会话描述");
-    })
-    .catch((err: any) => {
-      console.warn("生成本地会话描述失败:", err);
-    });
-};
-
-//获取远程视频流并播放
-const handleRemoteMediaStreamAdded = (pc: any, event: any) => {
-  pc.remoteStream = event.stream;
-  remoteVideoRef.value.srcObject = event.stream;
-  remoteVideoRef.value.addEventListener("loaloadedmetadatad", () => {
-    remoteVideoRef.value.play();
-  });
-  remoteStream.value = event.stream;
-  console.log(`从${pc.other.username}获取到远程视频`);
-};
-
-//发送消息
-const sendPcMessage = (params: any) => {
-  let from = {
-    userId: socket.value.id,
-    username: username.value,
-  };
-  let to = pcMsgTo.value;
-  socket.value.emit("pc_message", { from, to, pcMsg: params });
-};
-
-//关闭连接
-const closeConnection = async () => {
-  socket.value.disconnect();
-  onlineClients.value = [];
-  await closeLocalMedia();
-  localStream.value = null;
-  remoteStream.value = null;
-};
-
-const closeLocalMedia = () => {
-  if (localStream.value && localStream.value.getTracks()) {
-    localStream.value.getTracks().forEach((track: any) => {
-      track.stop();
-    });
-  }
-  if (remoteStream.value && remoteStream.value.getTracks()) {
-    remoteStream.value.getTracks().forEach((track: any) => {
-      track.stop();
-    });
-  }
-  if (
-    localVideoRef.value.srcObject &&
-    localVideoRef.value.srcObject.getTracks()
-  ) {
-    localVideoRef.value.srcObject.getTracks().forEach((track: any) => {
-      track.stop();
-    });
-  }
-  if (
-    remoteVideoRef.value.srcObject &&
-    remoteVideoRef.value.srcObject.getTracks()
-  ) {
-    remoteVideoRef.value.srcObject.getTracks().forEach((track: any) => {
-      track.stop();
-    });
-  }
-  if (onlinePeersList.value.other) {
-    remoteVideoRef.value.srcObject = null;
-  }
-  localVideoRef.value.srcObject = null;
-};
-
-//加入房间
-const joinRoom = () => {
-  const config: SocketConfig = {
-    path: "/rtcket",
-    query: {
-      username: username.value,
-      roomId: "hello",
-    },
-  };
-  const handleFunctions: HandleFunctions = {
-    onOtherJoin,
-    onMyJoin,
-    onMyLeave,
-    onOtherLeave,
-    onClientsOnline,
-    onPcMessage,
-    onInteract,
-    onAgreeInteract,
-    onRefuseInteract,
-    onStopInteract,
-    onCloseDisconnect,
-  };
-  socket.value = new Socket(SIGNAL_SERVER_URL, config, handleFunctions);
-};
-
-onMounted(joinRoom);
-onUnmounted(clearRoom);
 </script>
 
 <style lang="scss" scoped>
