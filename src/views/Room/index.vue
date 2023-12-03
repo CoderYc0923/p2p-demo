@@ -61,7 +61,13 @@
 <script setup lang="ts">
 import { MessageBoxFn } from "freeze-virtual-ui";
 
-import { PC_CONFIG, CALL_STATE, SOCKET_ON_RTC, CALL_TYPE } from "@/configs";
+import {
+  PC_CONFIG,
+  CALL_STATE,
+  SOCKET_ON_RTC,
+  CALL_TYPE,
+  SETTINGS_VIDEO,
+} from "@/configs";
 import SocketControler from "@/utils/socket";
 import { useUserInfo } from "@/stores/userInfo";
 import { UserItem } from "@/utils/type";
@@ -75,22 +81,12 @@ let remotePc: RTCPeerConnection; //对方pc连接
 let ws: SocketControler; // socket控制器
 let callState = ref<CALL_STATE>(CALL_STATE.WAIT); // 通话状态
 const userInfo = useUserInfo();
-const router = useRouter();
-
-watch(
-  () => router.currentRoute.value,
-  (router: any) => {
-    const userName = router.query.userName;
-    init(userName);
-  },
-  {
-    immediate: true,
-  }
-);
+const route = useRoute();
 
 const init = (userName: string) => {
   remotePc = new RTCPeerConnection(PC_CONFIG);
   createRTC(userName);
+  if (localVideoRef.value) initVideo(localVideoRef.value);
 };
 
 //创建rtc协议连接
@@ -117,14 +113,18 @@ const createRTC = (userName: string) => {
   //answer回调
   ws.rtcAnswer(async (res) => {
     let remoteAnswer = res.data;
+    console.log("rtcAnswer", remoteAnswer);
+
     await localPc.setRemoteDescription(remoteAnswer);
   });
   //candidate回调
   ws.rtcCandidate(async (res) => {
     if (!remoteVideoRef.value) return;
     userInfo.toUserInfo = res.toUserInfo;
-    let video: HTMLVideoElement = remoteVideoRef.value.$el;
+    let video: HTMLVideoElement = remoteVideoRef.value;
     remotePc.ontrack = (e) => {
+      console.log("rtcCandidate", e);
+
       video.srcObject = e.streams[0];
       //如果当前是接收者则触发弹窗
       if (res.callType === CALL_TYPE.SENDER) {
@@ -157,6 +157,31 @@ const createRTC = (userName: string) => {
   });
 };
 
+//初始化本地video
+const initVideo = async (video: HTMLVideoElement) => {
+  if (!video) return;
+  let settings = userInfo.settings;
+  try {
+    let config = {
+      video: settings.localVideo || false,
+      audio: settings.localAudio || false,
+    };
+    //getUserMedia 视频通话,getDisplayMedia 共享屏幕
+    let stream = await navigator.mediaDevices[
+      settings.video === SETTINGS_VIDEO.DISPLAY
+        ? "getDisplayMedia"
+        : "getUserMedia"
+    ](config);
+    video.srcObject = stream;
+    localStream = stream;
+    console.log("initVideo", localStream);
+
+    video.play();
+  } catch (err) {
+    console.log(`初始化本地video出错：${err}`);
+  }
+};
+
 //发起offer协议
 const sendOffer = async (toUser: UserItem, callType: CALL_TYPE) => {
   if (!ws.socket) {
@@ -165,6 +190,8 @@ const sendOffer = async (toUser: UserItem, callType: CALL_TYPE) => {
   }
   //初始化当前视频
   localPc = new RTCPeerConnection(PC_CONFIG);
+  console.log("localStream", localStream);
+
   //添加RTC流
   localStream.getTracks().forEach((track) => {
     localPc.addTrack(track, localStream);
@@ -191,7 +218,7 @@ const resetState = (state: CALL_STATE) => {
   //关闭远程PC通道
   remotePc.close();
   //清除事件
-  if (remoteVideoRef.value) remoteVideoRef.value.$el.oncanplay = null;
+  if (remoteVideoRef.value) remoteVideoRef.value.oncanplay = null;
   setTimeout(() => {
     userInfo.toUserInfo = {
       userName: "",
@@ -217,7 +244,7 @@ const onAgree = () => {
   }
   //接收对方的offer并同意通话
   if (remoteVideoRef.value) {
-    let video = remoteVideoRef.value.$el;
+    let video = remoteVideoRef.value;
     video.play();
     //同意通话，并设置自己为通话中
     if (userInfo.toUserInfo.userName && callState.value !== CALL_STATE.SEND) {
@@ -237,6 +264,21 @@ const onOver = () => {
   resetState(CALL_STATE.OFF);
   ws.emit(SOCKET_ON_RTC.USER_OFF, {});
 };
+
+/* watch(
+  () => router.currentRoute.value,
+  (router: any) => {
+    const userName = router.query.userName;
+    init(userName);
+  },
+  {
+    immediate: true,
+  }
+); */
+onMounted(() => {
+  const userName = route.query.userName as string;
+  init(userName);
+});
 </script>
 
 <style lang="scss" scoped>

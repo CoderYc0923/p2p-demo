@@ -9,7 +9,7 @@ export interface SocketConfig {
   path: string;
   query: {
     userName: string;
-    roomId: string;
+    room: string;
   };
 }
 

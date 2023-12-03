@@ -33,7 +33,7 @@ export default class SocketControler {
         path: "/rtcket",
         query: {
           userName: this.userName,
-          roomId: "001",
+          room: "001",
         },
       };
       this.socket = io.connect(SIGNAL_SERVER_URL, socketConfig);
@@ -97,20 +97,23 @@ export default class SocketControler {
     this.socket.on(SOCKET_ON_RTC.OFFER, async (res: Required<ResRtcType>) => {
       console.log(`接收到${res.toUserInfo.userName}的offer`);
       fn({ ...res });
-    })
+    });
   }
   //监听创建answer
   rtcAnswer(fn: RtcFn<RTCSessionDescriptionInit>) {
     this.socket.on(SOCKET_ON_RTC.ANSWER, async (res: Required<ResRtcType>) => {
       console.log(`接收到${res.toUserInfo.userName}的answer`);
       fn({ ...res });
-    })
+    });
   }
   //监听candidate回调
   rtcCandidate(fn: RtcFn<RTCIceCandidateInit>) {
-    this.socket.on(SOCKET_ON_RTC.CANDIDATE, async (res: Required<ResRtcType>) => {
-      console.log(`建立连接 触发${res.toUserInfo.userName}candidate回调`);
-      fn({ ...res });
-    })
+    this.socket.on(
+      SOCKET_ON_RTC.CANDIDATE,
+      async (res: Required<ResRtcType>) => {
+        console.log(`建立连接 触发${res.toUserInfo.userName}candidate回调`);
+        fn({ ...res });
+      }
+    );
   }
 }
